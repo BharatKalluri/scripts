@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "scripts"
+version = "0.1.0"
+description = ""
+authors = ["Bharat Kalluri <bharatkalluri@protonmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pypdf = "^4.0.2"
+pandas = "^2.2.1"
+requests = "^2.31.0"
+diskcache = "^5.6.3"
+beautifulsoup4 = "^4.12.3"
+typer = {extras = ["all"], version = "^0.9.0"}
+pydantic = "^2.6.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
