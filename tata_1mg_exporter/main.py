@@ -45,7 +45,7 @@ class Report(BaseModel):
 @cache.memoize()
 def get_report(report_id: str, cookie: str, member_id: str):
     response = requests.get(
-        url=f"https://www.1mg.com/pwa-api/api/v5/user/health-record/diagnostics/{report_id}=/{member_id}",
+        url=f"https://www.1mg.com/pwa-api/api/v5/user/health-record/diagnostics/{report_id}/{member_id}",
         headers={"cookie": cookie},
     )
     if not response.ok:
