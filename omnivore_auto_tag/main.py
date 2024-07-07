@@ -59,17 +59,14 @@ def get_recommended_labels(
 ) -> list[str]:
     llm = OpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0)
     prompt_text = f"""
-Given the following metadata:
-URL: {link_metadata.get("url")}
+Given the following data about a link:
 Title: {link_metadata.get("title")}
-Description: {link_metadata.get("description")}
 Page Type: {link_metadata.get("pageType")}
-Author: {link_metadata.get("author")}
 
 Pre existing labels: {", ".join(pre_existing_labels)}
 
 Please provide a list of recommended labels picked from the pre-existing labels for this article.
-Only recommend labels that are relevant to the article & in the list of pre-existing labels. recommend three tags at most.
+Please recommend less then 4 labels.
 """
     prompt = Prompt(prompt_text)
     llm_recommended_labels = llm.structured_predict(
@@ -83,7 +80,7 @@ def get_label_id_from_labels(
     label_name: str, all_labels: list[OmnivoreLabelMetadata]
 ) -> Optional[str]:
     filtered_label_ids = [l["id"] for l in all_labels if l["name"] == label_name]
-    if not filtered_label_ids:
+    if len(filtered_label_ids) == 0:
         return None
     return filtered_label_ids[0]
 
@@ -102,7 +99,7 @@ def auto_tag(
             link_metadata=article, pre_existing_labels=pre_existing_labels
         )
         print(
-            f'setting labels for article: {article.get("title")} and id {article.get('id')} with labels: {recommended_labels}'
+            f'setting labels for article: {article.get("title")} with labels: {recommended_labels}'
         )
         recommend_label_ids: list[str | None] = [
             get_label_id_from_labels(label_name=el, all_labels=all_labels_with_metadata)
