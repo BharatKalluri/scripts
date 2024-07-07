@@ -18,6 +18,7 @@ subliminal = "^2.1.0"
 babelfish = "^0.6.1"
 setuptools = "^70.1.0"
 transmission-rpc = "^7.0.10"
+assemblyai = "^0.29.0"
 
 
 [build-system]
