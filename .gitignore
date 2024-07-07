@@ -1,3 +1,6 @@
 .idea
 cache_dir
 cachefile.dbm
+venv
+.env
+.vscode
