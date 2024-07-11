@@ -13,14 +13,21 @@ transcriber = aai.Transcriber()
 
 
 class SpeakerLabel(TypedDict):
-    speaker_label: str
+    speaker_label: str | None
     text: str
+    start: int
+    end: int
 
 
 def get_speaker_labels(audio_transcript: Transcript) -> List[SpeakerLabel]:
     return [
-        SpeakerLabel(speaker_label=utterance.speaker, text=utterance.text)
-        for utterance in audio_transcript.utterances
+        SpeakerLabel(
+            speaker_label=utterance.speaker,
+            text=utterance.text,
+            start=utterance.start,
+            end=utterance.end,
+        )
+        for utterance in (audio_transcript.utterances or [])
     ]
 
 
@@ -32,10 +39,20 @@ def transcribe_file(path_to_transcribe: str) -> Transcript:
 def format_transcription(transcription: list[SpeakerLabel], output_format: str):
     if output_format == "txt":
         return "\n".join(
-            [f"{el['speaker_label']}: {el['text']}" for el in transcription]
+            [
+                f"[{el['start']}:{el['end']}] {el['speaker_label']}: {el['text']}"
+                for el in transcription
+            ]
         )
     elif output_format == "json":
-        return json.dumps({el["speaker_label"]: el["text"] for el in transcription})
+        return json.dumps([
+            dict(
+                speaker=el["speaker_label"],
+                text = el["text"],
+                start = el["start"],
+                end = el["end"]
+            ) for el in transcription
+        ])
     else:
         raise ValueError("Invalid format")
 

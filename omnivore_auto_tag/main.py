@@ -11,7 +11,10 @@ from omnivoreql import OmnivoreQL
 from pydantic import BaseModel
 
 OMNIVORE_API_KEY = os.environ.get("OMNIVORE_API_KEY")
-OPENAI_API_KEY = os.environ.get("OPENAI_API")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+if not OMNIVORE_API_KEY or not OPENAI_API_KEY:
+    raise ValueError("OMNIVORE_API_KEY and OPENAI_API must be set")
 
 omnivoreql_client = OmnivoreQL(OMNIVORE_API_KEY)
 
