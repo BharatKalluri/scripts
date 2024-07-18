@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from typing import Annotated
@@ -6,6 +7,9 @@ from typing import TypedDict, List
 import assemblyai as aai
 import typer
 from assemblyai import Transcript
+from diskcache import Cache
+
+cache = Cache("voice_notes_cache_dir")
 
 
 aai.settings.api_key = os.environ.get("ASSEMBLYAI_API_KEY")
@@ -32,8 +36,20 @@ def get_speaker_labels(audio_transcript: Transcript) -> List[SpeakerLabel]:
 
 
 def transcribe_file(path_to_transcribe: str) -> Transcript:
+    file_contents = open(path_to_transcribe, "rb")
+    file_hash = hashlib.md5(file_contents.read()).hexdigest()
+    file_contents.close()
+
+    transcript_id_from_cache = cache.get(file_hash)
+    if transcript_id_from_cache:
+        return Transcript(transcript_id_from_cache).get_by_id(
+            transcript_id=transcript_id_from_cache
+        )
+
     config = aai.TranscriptionConfig(speaker_labels=True, language_code="en")
-    return aai.Transcriber().transcribe(data=path_to_transcribe, config=config)
+    transcript = aai.Transcriber().transcribe(data=path_to_transcribe, config=config)
+    cache.set(file_hash, transcript.id)
+    return transcript
 
 
 def format_transcription(transcription: list[SpeakerLabel], output_format: str):
@@ -45,14 +61,17 @@ def format_transcription(transcription: list[SpeakerLabel], output_format: str):
             ]
         )
     elif output_format == "json":
-        return json.dumps([
-            dict(
-                speaker=el["speaker_label"],
-                text = el["text"],
-                start = el["start"],
-                end = el["end"]
-            ) for el in transcription
-        ])
+        return json.dumps(
+            [
+                dict(
+                    speaker=el["speaker_label"],
+                    text=el["text"],
+                    start=el["start"],
+                    end=el["end"],
+                )
+                for el in transcription
+            ]
+        )
     else:
         raise ValueError("Invalid format")
 

@@ -4,3 +4,4 @@ cachefile.dbm
 venv
 .env
 .vscode
+*_cache_dir
