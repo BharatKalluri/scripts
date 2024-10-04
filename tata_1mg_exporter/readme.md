@@ -1,6 +1,6 @@
 # Tata 1mg report data exporter
 
-This script is a piece from [the health protocol](https://notes.bharatkalluri.com/Protocols---Health)
+This script is a piece from [the health protocol](https://notes.bharatkalluri.com/protocols-health/)
 
 ## Why?
 
