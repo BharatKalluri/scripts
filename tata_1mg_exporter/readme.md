@@ -10,7 +10,8 @@ it later for analysis. Why?
 ## How to run?
 
 ```shell
-poetry run python ./main.py --help
+uv sync
+uv run main.py --help
 ```
 
 Tata 1mg does not make this easy. They have an API to get health records, but you'll need to pretend to be logging in

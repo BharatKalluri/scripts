@@ -5,3 +5,4 @@ venv
 .env
 .vscode
 *_cache_dir
+.aider*

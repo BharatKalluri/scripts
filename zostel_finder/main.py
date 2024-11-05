@@ -2,9 +2,7 @@ import dataclasses
 from http.client import HTTPException
 
 import requests
-import typer
-from rich import print
-from typing_extensions import Annotated
+import streamlit as st
 
 
 @dataclasses.dataclass
@@ -84,36 +82,53 @@ def is_units_available(
     return available_everyday
 
 
-def cli(
-    check_in_date_str: Annotated[str, typer.Option()],
-    check_out_date_str: Annotated[str, typer.Option()],
-    token: Annotated[str, typer.Option()],
-    client_app_id: Annotated[str, typer.Option()],
-    client_user_id: Annotated[str, typer.Option()],
-):
-    zostel_client = ZostelClient(
-        token=token, client_app_id=client_app_id, client_user_id=client_user_id
+def app():
+    st.set_page_config(
+        page_title="Zostel Availability Finder",
+        page_icon="🏢",
+        layout="wide"
     )
-    zostel_list_raw = zostel_client.get_zostel_properties_list()
-    zostel_list_slugs = [el.get("slug") for el in zostel_list_raw]
-    available_slugs = [
-        selected_slug
-        for selected_slug in zostel_list_slugs
-        if is_units_available(
-            zostel_client=zostel_client,
-            selected_slug=selected_slug,
-            check_in=check_in_date_str,
-            check_out=check_out_date_str,
-        )
-    ]
-    print(
-        dict(
-            check_in_date_str=check_in_date_str,
-            check_out_date_str=check_out_date_str,
-            available_slugs=available_slugs,
-        )
-    )
+    st.title("Zostel Availability Finder")
+    
+    with st.form("zostel_search_form"):
+        check_in_date = st.date_input("Check-in Date")
+        check_out_date = st.date_input("Check-out Date")
+        token = st.text_input("Token", type="password")
+        client_app_id = st.text_input("Client App ID")
+        client_user_id = st.text_input("Client User ID")
+        
+        submitted = st.form_submit_button("Find Available Zostels")
+        
+        if submitted and token and client_app_id and client_user_id:
+            zostel_client = ZostelClient(
+                token=token,
+                client_app_id=client_app_id,
+                client_user_id=client_user_id
+            )
+            
+            with st.spinner("Fetching Zostel properties..."):
+                zostel_list_raw = zostel_client.get_zostel_properties_list()
+                zostel_list_slugs = [el.get("slug") for el in zostel_list_raw]
+                
+                available_slugs = [
+                    selected_slug
+                    for selected_slug in zostel_list_slugs
+                    if is_units_available(
+                        zostel_client=zostel_client,
+                        selected_slug=selected_slug,
+                        check_in=check_in_date.strftime("%Y-%m-%d"),
+                        check_out=check_out_date.strftime("%Y-%m-%d"),
+                    )
+                ]
+                
+                if available_slugs:
+                    st.success(f"Found {len(available_slugs)} available Zostels!")
+                    st.write("**Available Zostels:**")
+                    for slug in available_slugs:
+                        st.markdown(f"- {slug}")
+                else:
+                    st.warning("No available Zostels found for the selected dates.")
 
 
 if __name__ == "__main__":
-    typer.run(cli)
+    app()
