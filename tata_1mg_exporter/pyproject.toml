@@ -1,0 +1,13 @@
+[project]
+name = "tata-1mg-exporter"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "diskcache>=5.6.3",
+    "pandas>=2.2.3",
+    "pydantic>=2.9.2",
+    "requests>=2.32.3",
+    "typer>=0.12.5",
+]
