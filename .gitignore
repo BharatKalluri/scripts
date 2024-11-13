@@ -2,7 +2,9 @@
 cache_dir
 cachefile.dbm
 venv
+.venv
 .env
 .vscode
 *_cache_dir
 .aider*
+__pycache__
