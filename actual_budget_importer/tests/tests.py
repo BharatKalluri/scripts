@@ -1,6 +1,26 @@
 from datetime import date
 
-from main import transform_hdfc_csv_to_transactions, Transaction
+from main import transform_hdfc_csv_to_transactions, Transaction, extract_payee_from_hdfc_bank_statement_narration
+
+
+def test_extract_payee_from_narration():
+    # Test UPI transaction with multiple parts
+    assert extract_payee_from_hdfc_bank_statement_narration("UPI-ZOMATO LTD-ZOMATO-ORDER@PTYBL-YESB0PTMUPI-430213318243-ZOMATO PAYMENT") == "ZOMATO LTD"
+    
+    # Test simple UPI transaction
+    assert extract_payee_from_hdfc_bank_statement_narration("UPI-John Doe-Reference") == "John Doe"
+    
+    # Test NEFT transaction
+    assert extract_payee_from_hdfc_bank_statement_narration("NEFT DR-PUNB0498700-random name-NETBANK") == "random name"
+    
+    # Test RTGS transaction
+    assert extract_payee_from_hdfc_bank_statement_narration("RTGS-SBIN000123-ACME Corp-Transfer") == "ACME Corp"
+    
+    # Test non-UPI/NEFT/RTGS transaction
+    assert extract_payee_from_hdfc_bank_statement_narration("ATM Withdrawal") == ""
+    
+    # Test empty string
+    assert extract_payee_from_hdfc_bank_statement_narration("") == ""
 
 
 def test_transform_single_transaction():

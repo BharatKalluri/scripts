@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import logging
 from dataclasses import dataclass
@@ -28,16 +29,53 @@ class Transaction:
     closing_balance: float
 
 
+def extract_payee_from_hdfc_bank_statement_narration(narration: str) -> str:
+    """Extract payee name from transaction narration.
+    
+    For UPI transactions, extracts the second part after splitting by '-'.
+    For NEFT/RTGS transactions, extracts the third part after splitting by '-'.
+    For other transactions, returns empty string.
+    """
+    narration_lower = narration.lower()
+    if narration_lower.startswith("upi-"):
+        parts = narration.split("-")
+        if len(parts) > 1:
+            return parts[1].strip()
+    elif narration_lower.startswith("neft") or narration_lower.startswith("rtgs"):
+        parts = narration.split("-")
+        if len(parts) > 2:
+            return parts[2].strip()
+    return ""
+
+
 def transform_hdfc_csv_to_transactions(file_contents: str) -> List[Transaction]:
     transactions = []
     csvfile = io.StringIO(file_contents)
+    
+    # Get number of columns from header
+    first_line = next(csvfile).strip()
+    num_cols = len([col for col in first_line.split(',') if col.strip()])
+    csvfile.seek(0)
+    
     # Skip the header row
     next(csvfile)
     reader = csv.reader(csvfile)
+    
     for row_num, row in enumerate(reader, start=2):  # start=2 because we skipped header
+        row = [el for el in row if el.strip()]
         if not row:
             logging.warning(f"Empty row found at line {row_num}")
             continue
+            
+        # Handle case where narration contains a comma
+        if len(row) > num_cols:
+            # Merge the split narration fields
+            extra_cols = len(row) - num_cols
+            narration_parts = row[1:2+extra_cols]
+            merged_narration = ' '.join(part.strip() for part in narration_parts)
+            # Reconstruct row with merged narration
+            row = [row[0], merged_narration] + row[2+extra_cols:]
+            
         if len(row) < 7:
             logging.warning(
                 f"Malformed row at line {row_num}. Expected 7 columns, got {len(row)}. Row content: {row}"
@@ -53,11 +91,20 @@ def transform_hdfc_csv_to_transactions(file_contents: str) -> List[Transaction]:
         # Handle amount (negative for debit, positive for credit)
         amount = float(credit_amt.strip() or "0") - float(debit_amt.strip() or "0")
 
+        # Generate hash if ref_id is '0'
+        cleaned_ref_id = ref_id.strip()
+        if cleaned_ref_id == '0':
+            # Create a unique hash from narration and date
+            hash_input = f"{date_only.isoformat()}:{narration.strip()}"
+            cleaned_ref_id = hashlib.sha256(hash_input.encode()).hexdigest()
+
+        assert len(cleaned_ref_id) > 3, f"Invalid ref_id: {cleaned_ref_id}"
+
         transactions.append(
             Transaction(
                 amount=amount,
                 narration=narration.strip(),
-                ref_id=ref_id.strip(),
+                ref_id=cleaned_ref_id,
                 date=date_only,
                 closing_balance=float(closing_balance.strip()),
             )
@@ -68,12 +115,12 @@ def transform_hdfc_csv_to_transactions(file_contents: str) -> List[Transaction]:
 
 def upsert_transactions_to_actual(transactions: List[Transaction], session, account):
     for transaction in transactions:
+        payee = extract_payee_from_hdfc_bank_statement_narration(transaction.narration)
         # Use reconcile_transaction for both new and existing transactions
         reconcile_transaction(
             s=session,
             amount=transaction.amount,
-            # TODO: payee is not narration, but we don't really have a choice here :(
-            payee=transaction.narration,
+            payee=payee,
             imported_id=transaction.ref_id,
             date=transaction.date,
             account=account,
