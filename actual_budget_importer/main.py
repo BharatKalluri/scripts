@@ -4,7 +4,7 @@ import io
 import logging
 from dataclasses import dataclass
 from datetime import datetime, date
-from typing import List
+from typing import List, Optional
 
 import streamlit as st
 import pandas as pd
@@ -29,7 +29,7 @@ class Transaction:
     closing_balance: float
 
 
-def extract_payee_from_hdfc_bank_statement_narration(narration: str) -> str:
+def extract_payee_from_hdfc_bank_statement_narration(narration: str) -> Optional[str]:
     """Extract payee name from transaction narration.
     
     For UPI transactions, extracts the second part after splitting by '-'.
@@ -45,20 +45,19 @@ def extract_payee_from_hdfc_bank_statement_narration(narration: str) -> str:
         parts = narration.split("-")
         if len(parts) > 2:
             return parts[2].strip()
-    return ""
+    return None
 
 
 def transform_hdfc_csv_to_transactions(file_contents: str) -> List[Transaction]:
     transactions = []
     csvfile = io.StringIO(file_contents)
+
+    # skip empty line since HDFC statement has an empty line at the start
+    next(csvfile)
     
     # Get number of columns from header
     first_line = next(csvfile).strip()
     num_cols = len([col for col in first_line.split(',') if col.strip()])
-    csvfile.seek(0)
-    
-    # Skip the header row
-    next(csvfile)
     reader = csv.reader(csvfile)
     
     for row_num, row in enumerate(reader, start=2):  # start=2 because we skipped header
@@ -177,7 +176,8 @@ def main():
                 st.session_state["actual_url"],
                 password=st.session_state["actual_password"],
             ) as actual:
-                actual.set_file(actual.list_user_files().data[0])
+                # TODO: get rid of this duplication
+                actual.set_file([f for f in actual.list_user_files().data if f.deleted == 0][0])
                 actual.download_budget()
                 accounts = get_accounts(actual.session)
                 account_names = [acc.name for acc in accounts]
@@ -204,7 +204,7 @@ def main():
             # First verify Actual connection and account existence
             with st.spinner("Checking Actual connection and account..."):
                 with Actual(actual_url, password=actual_password) as actual:
-                    actual.set_file(actual.list_user_files().data[0])
+                    actual.set_file([f for f in actual.list_user_files().data if f.deleted == 0][0])
                     actual.download_budget()
                     account = get_account(actual.session, name=account_name)
                 if not account:
@@ -224,7 +224,7 @@ def main():
 
             with st.spinner("Importing transactions to Actual..."):
                 with Actual(actual_url, password=actual_password) as actual:
-                    actual.set_file(actual.list_user_files().data[0])
+                    actual.set_file([f for f in actual.list_user_files().data if f.deleted == 0][0])
                     actual.download_budget()
                     upsert_transactions_to_actual(
                         transactions=transactions,
