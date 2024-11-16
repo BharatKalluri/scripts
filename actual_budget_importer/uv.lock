@@ -269,6 +269,7 @@ dependencies = [
     { name = "actualpy" },
     { name = "pandas" },
     { name = "pytest" },
+    { name = "requests" },
     { name = "streamlit" },
 ]
 
@@ -277,6 +278,7 @@ requires-dist = [
     { name = "actualpy", specifier = ">=0.7.0" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "pytest", specifier = ">=8.3.3" },
+    { name = "requests", specifier = ">=2.32.3" },
     { name = "streamlit", specifier = ">=1.40.1" },
 ]
 

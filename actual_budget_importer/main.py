@@ -11,13 +11,12 @@ import pandas as pd
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Bank Statement to Actual Budget Importer",
+    page_title="Bank Statement to Firefly III Importer",
     page_icon="🏦",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-from actual import Actual
-from actual.queries import reconcile_transaction, get_account, get_accounts
+from firefly_client import FireflyClient
 
 
 @dataclass
@@ -112,18 +111,17 @@ def transform_hdfc_csv_to_transactions(file_contents: str) -> List[Transaction]:
     return transactions
 
 
-def upsert_transactions_to_actual(transactions: List[Transaction], session, account):
+def import_transactions_to_firefly(transactions: List[Transaction], client: FireflyClient, account_id: int):
     for transaction in transactions:
         payee = extract_payee_from_hdfc_bank_statement_narration(transaction.narration)
-        # Use reconcile_transaction for both new and existing transactions
-        reconcile_transaction(
-            s=session,
+        client.create_transaction(
+            account_id=account_id,
             amount=transaction.amount,
-            payee=payee,
-            imported_id=transaction.ref_id,
             date=transaction.date,
-            account=account,
+            description=transaction.narration[:255],  # Firefly has a limit on description length
             notes=transaction.narration,
+            external_id=transaction.ref_id,
+            payee=payee
         )
 
 
@@ -143,44 +141,41 @@ def transactions_to_df(transactions: List[Transaction]) -> pd.DataFrame:
 
 
 def main():
-    st.title("Bank Statement to Actual Budget Importer")
+    st.title("Bank Statement to Firefly III Importer")
 
     # Authentication in sidebar
     with st.sidebar:
         st.subheader("Authentication")
         with st.form("auth_form"):
-            actual_url = st.text_input("Actual Server URL")
-            actual_password = st.text_input("Actual Password", type="password")
+            firefly_url = st.text_input("Firefly III URL")
+            personal_access_token = st.text_input("Personal Access Token", type="password")
             auth_submit = st.form_submit_button("Connect")
 
     # Check if authenticated
     is_authenticated = auth_submit or (
-        "actual_url" in st.session_state and "actual_password" in st.session_state
+        "firefly_url" in st.session_state and "personal_access_token" in st.session_state
     )
 
     if not is_authenticated:
         st.info(
-            "👈 Please enter your Actual server URL and password in the sidebar to get started."
+            "👈 Please enter your Firefly III URL and Personal Access Token in the sidebar to get started."
         )
         return
 
     if is_authenticated:
         # Store credentials in session state
         if auth_submit:
-            st.session_state["actual_url"] = actual_url
-            st.session_state["actual_password"] = actual_password
+            st.session_state["firefly_url"] = firefly_url
+            st.session_state["personal_access_token"] = personal_access_token
 
         # Get accounts list for dropdown
         try:
-            with Actual(
-                st.session_state["actual_url"],
-                password=st.session_state["actual_password"],
-            ) as actual:
-                # TODO: get rid of this duplication
-                actual.set_file([f for f in actual.list_user_files().data if f.deleted == 0][0])
-                actual.download_budget()
-                accounts = get_accounts(actual.session)
-                account_names = [acc.name for acc in accounts]
+            client = FireflyClient(
+                st.session_state["firefly_url"],
+                st.session_state["personal_access_token"]
+            )
+            accounts = client.get_accounts()
+            account_names = [acc.name for acc in accounts]
         except Exception as e:
             st.error(f"Failed to connect to Actual: {str(e)}")
             return
@@ -202,14 +197,13 @@ def main():
 
         if submit_button and uploaded_file is not None:
             # First verify Actual connection and account existence
-            with st.spinner("Checking Actual connection and account..."):
-                with Actual(actual_url, password=actual_password) as actual:
-                    actual.set_file([f for f in actual.list_user_files().data if f.deleted == 0][0])
-                    actual.download_budget()
-                    account = get_account(actual.session, name=account_name)
+            with st.spinner("Checking Firefly III connection and account..."):
+                client = FireflyClient(firefly_url, personal_access_token)
+                accounts = client.get_accounts()
+                account = next((acc for acc in accounts if acc.name == account_name), None)
                 if not account:
                     raise ValueError(
-                        f"Account '{account_name}' not found in Actual. Please create it first."
+                        f"Account '{account_name}' not found in Firefly III. Please create it first."
                     )
 
             # Process and import transactions
@@ -222,16 +216,13 @@ def main():
             else:
                 raise ValueError(f"Unsupported data source: {data_source}")
 
-            with st.spinner("Importing transactions to Actual..."):
-                with Actual(actual_url, password=actual_password) as actual:
-                    actual.set_file([f for f in actual.list_user_files().data if f.deleted == 0][0])
-                    actual.download_budget()
-                    upsert_transactions_to_actual(
-                        transactions=transactions,
-                        session=actual.session,
-                        account=account,
-                    )
-                    actual.commit()
+            with st.spinner("Importing transactions to Firefly III..."):
+                client = FireflyClient(firefly_url, personal_access_token)
+                import_transactions_to_firefly(
+                    transactions=transactions,
+                    client=client,
+                    account_id=account.id
+                )
 
             # Show imported transactions
             st.success(
