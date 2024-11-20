@@ -92,9 +92,9 @@ def transform_hdfc_csv_to_transactions(file_contents: str) -> List[Transaction]:
         # Handle amount (negative for debit, positive for credit)
         amount = float(credit_amt.strip() or "0") - float(debit_amt.strip() or "0")
 
-        # Generate hash if ref_id is '0'
+        # Generate hash if ref_id is '0' or if the entire string is made out of zeros
         cleaned_ref_id = ref_id.strip()
-        if cleaned_ref_id == "0":
+        if cleaned_ref_id == "0" or all(c == "0" for c in cleaned_ref_id):
             # Create a unique hash from narration and date since the ref_id is 0
             hash_input = f"{date_only.isoformat()}:{amount}:{narration.strip()}"
             cleaned_ref_id = hashlib.sha256(hash_input.encode()).hexdigest()
