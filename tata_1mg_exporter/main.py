@@ -146,6 +146,26 @@ def get_parameter_metadata(df: pd.DataFrame, param_name: str) -> Dict:
     return metadata
 
 
+def display_parameter_metrics(col1, col2, metadata: Dict):
+    """Display parameter metrics in two columns."""
+    with col1:
+        st.metric(
+            "Latest Value",
+            f"{metadata['latest_value']} {metadata['unit']}",
+            delta=(
+                "↑"
+                if metadata["trend"] == "increasing"
+                else "↓" if metadata["trend"] else None
+            ),
+        )
+    with col2:
+        st.markdown(
+            f"""
+            **Reference Range:** {metadata['reference_range']}  
+            **Measurements:** {metadata['measurements']}
+        """
+        )
+
 def plot_parameter(df: pd.DataFrame, param_name: str) -> bool:
     param_data = df[df["standard_lab_parameter_name"] == param_name].copy()
     param_data["created_at"] = pd.to_datetime(param_data["created_at"])
@@ -265,23 +285,7 @@ def main():
                         metadata = get_parameter_metadata(df, param_name)
                         with st.expander(f"⚠️ {param_name}", expanded=True):
                             col1, col2 = st.columns(2)
-                            with col1:
-                                st.metric(
-                                    "Latest Value",
-                                    f"{metadata['latest_value']} {metadata['unit']}",
-                                    delta=(
-                                        "↑"
-                                        if metadata["trend"] == "increasing"
-                                        else "↓" if metadata["trend"] else None
-                                    ),
-                                )
-                            with col2:
-                                st.markdown(
-                                    f"""
-                                    **Reference Range:** {metadata['reference_range']}  
-                                    **Measurements:** {metadata['measurements']}
-                                """
-                                )
+                            display_parameter_metrics(col1, col2, metadata)
                             fig = plot_parameter(df, param_name)
                             if fig:
                                 st.plotly_chart(
@@ -310,23 +314,7 @@ def main():
                                 # Show metadata
                                 meta = param["metadata"]
                                 col1, col2 = st.columns(2)
-                                with col1:
-                                    st.metric(
-                                        "Latest Value",
-                                        f"{meta['latest_value']} {meta['unit']}",
-                                        delta=(
-                                            "↑"
-                                            if meta["trend"] == "increasing"
-                                            else "↓" if meta["trend"] else None
-                                        ),
-                                    )
-                                with col2:
-                                    st.markdown(
-                                        f"""
-                                        **Reference Range:** {meta['reference_range']}  
-                                        **Measurements:** {meta['measurements']}
-                                    """
-                                    )
+                                display_parameter_metrics(col1, col2, meta)
 
                                 # Show plot
                                 fig = plot_parameter(df, param["name"])
