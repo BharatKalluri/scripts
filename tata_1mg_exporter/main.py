@@ -113,7 +113,7 @@ def main():
     )
     report_id_list = [rid.strip() for rid in report_ids.split('\n') if rid.strip()]
 
-    if st.button("Export Reports", type="primary"):
+    if st.button("Visualize", type="primary"):
         if not all([cookie, member_id]):
             st.error("Please provide both Cookie and Member ID")
             return
@@ -127,11 +127,28 @@ def main():
                 report_id_list, cookie=cookie, member_id=member_id
             )
             df = pd.DataFrame.from_records([el.dict() for el in biomarker_db])
-            
-            st.dataframe(df)
-            
+
             # Create visualization section
-            st.subheader("Lab Parameters Analysis")
+            st.subheader("Abnormal Parameters")
+            
+            def is_value_abnormal(row: pd.Series) -> bool:
+                try:
+                    value = pd.to_numeric(row['value'])
+                    low = pd.to_numeric(row['low_value']) if pd.notna(row['low_value']) else None
+                    high = pd.to_numeric(row['high_value']) if pd.notna(row['high_value']) else None
+
+                    if pd.isna(value):
+                        return False
+
+
+                    # Strict comparison with explicit float conversion
+                    if low is not None and float(value) < float(low):
+                        return True
+                    if high is not None and float(value) > float(high):
+                        return True
+                    return False
+                except (ValueError, TypeError) as e:
+                    return False
 
             def get_parameter_metadata(df: pd.DataFrame, param_name: str) -> Dict:
                 param_data = df[df['standard_lab_parameter_name'] == param_name].copy()
@@ -206,9 +223,39 @@ def main():
                 st.warning("No parameters with numeric values found to plot.")
                 return
 
-            # Search functionality
-            search_term = st.text_input("🔍 Search parameters", "").lower()
+            # Show abnormal parameters first - only check latest values
+            # Convert created_at to datetime for proper sorting
+            df['created_at'] = pd.to_datetime(df['created_at'])
+            latest_readings = df.sort_values('created_at', ascending=True).groupby('standard_lab_parameter_name').last().reset_index()
+            abnormal_params = latest_readings[latest_readings.apply(is_value_abnormal, axis=1)]['standard_lab_parameter_name'].tolist()
+            
+            if abnormal_params:
+                st.warning("The following parameters are outside normal range:")
+                cols = st.columns(2)
+                for idx, param_name in enumerate(abnormal_params):
+                    with cols[idx % 2]:
+                        metadata = get_parameter_metadata(df, param_name)
+                        with st.expander(f"⚠️ {param_name}", expanded=True):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric(
+                                    "Latest Value", 
+                                    f"{metadata['latest_value']} {metadata['unit']}", 
+                                    delta="↑" if metadata['trend'] == 'increasing' else "↓" 
+                                    if metadata['trend'] else None
+                                )
+                            with col2:
+                                st.markdown(f"""
+                                    **Reference Range:** {metadata['reference_range']}  
+                                    **Measurements:** {metadata['measurements']}
+                                """)
+                            fig = plot_parameter(df, param_name)
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True, key=f"abnormal_{param_name}")
+            else:
+                st.success("All parameters are within normal range! 🎉")
 
+            st.subheader("All Parameters by Category")
             # Create tabs for categories
             tabs = st.tabs(list(parameters_by_category.keys()))
             
@@ -216,19 +263,9 @@ def main():
                 with tab:
                     st.markdown(f"### {category}")
                     
-                    # Filter parameters based on search
-                    filtered_params = [
-                        p for p in parameters 
-                        if search_term in p['name'].lower()
-                    ]
-                    
-                    if not filtered_params:
-                        st.info("No matching parameters in this category.")
-                        continue
-
                     # Create columns for parameters
                     cols = st.columns(2)
-                    for idx, param in enumerate(filtered_params):
+                    for idx, param in enumerate(parameters):
                         with cols[idx % 2]:
                             with st.expander(f"📊 {param['name']}", expanded=True):
                                 # Show metadata
@@ -250,7 +287,7 @@ def main():
                                 # Show plot
                                 fig = plot_parameter(df, param['name'])
                                 if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
+                                    st.plotly_chart(fig, use_container_width=True, key=f"category_{category}_{param['name']}")
 
 if __name__ == "__main__":
     main()
