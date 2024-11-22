@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 # Initialize cache and page config
 cache = Cache("cache_dir")
-st.set_page_config(page_title="1mg Report Exporter", layout="wide")
+st.set_page_config(page_title="1mg Report Explorer", layout="wide")
 
 
 class ReportEntry(BaseModel):
@@ -92,8 +92,91 @@ def build_biomarker_db(
     return report_entries
 
 
+def is_value_abnormal(row: pd.Series) -> bool:
+                try:
+                    value = pd.to_numeric(row['value'])
+                    low = pd.to_numeric(row['low_value']) if pd.notna(row['low_value']) else None
+                    high = pd.to_numeric(row['high_value']) if pd.notna(row['high_value']) else None
+
+                    if pd.isna(value):
+                        return False
+
+
+                    # Strict comparison with explicit float conversion
+                    if low is not None and float(value) < float(low):
+                        return True
+                    if high is not None and float(value) > float(high):
+                        return True
+                    return False
+                except (ValueError, TypeError) as e:
+                    return False
+
+
+
+def get_parameter_metadata(df: pd.DataFrame, param_name: str) -> Dict:
+                param_data = df[df['standard_lab_parameter_name'] == param_name].copy()
+                param_data['value'] = pd.to_numeric(param_data['value'], errors='coerce')
+                
+                metadata = {
+                    'category': param_data['category'].iloc[0] if not param_data.empty else 'Unknown',
+                    'unit': param_data['unit'].iloc[0] if not param_data.empty else '',
+                    'latest_value': param_data.iloc[-1]['value'] if not param_data.empty else None,
+                    'trend': None,
+                    'is_numeric': not param_data['value'].isna().all(),
+                    'measurements': len(param_data),
+                    'reference_range': f"{param_data['low_value'].iloc[0]} - {param_data['high_value'].iloc[0]}" 
+                        if not param_data.empty else 'N/A'
+                }
+                
+                if metadata['is_numeric'] and len(param_data) > 1:
+                    last_values = param_data['value'].tail(2).values
+                    metadata['trend'] = 'increasing' if last_values[1] > last_values[0] else 'decreasing'
+                
+                return metadata
+
+
+
+def plot_parameter(df: pd.DataFrame, param_name: str) -> bool:
+                param_data = df[df['standard_lab_parameter_name'] == param_name].copy()
+                param_data['created_at'] = pd.to_datetime(param_data['created_at'])
+                param_data['value'] = pd.to_numeric(param_data['value'], errors='coerce')
+                
+                if param_data['value'].isna().all():
+                    return False
+                
+                # Create the plot
+                fig = px.line(
+                    param_data.sort_values('created_at'), 
+                    x='created_at', 
+                    y='value',
+                    title=f'{param_name} ({param_data["unit"].iloc[0]})',
+                    markers=True
+                )
+                
+                # Add reference ranges
+                if not param_data.empty:
+                    low_val = pd.to_numeric(param_data['low_value'].iloc[0], errors='coerce')
+                    high_val = pd.to_numeric(param_data['high_value'].iloc[0], errors='coerce')
+                    
+                    if pd.notna(low_val):
+                        fig.add_hline(y=low_val, line_dash="dash", 
+                                    annotation_text="Lower Limit", line_color="red")
+                    if pd.notna(high_val):
+                        fig.add_hline(y=high_val, line_dash="dash", 
+                                    annotation_text="Upper Limit", line_color="red")
+                
+                fig.update_layout(
+                    hovermode='x unified',
+                    showlegend=False,
+                    height=400
+                )
+                
+                return fig
+
+
+
 def main():
-    st.title("1mg Report Exporter")
+    st.title("1mg Report Explorer")
     
     st.markdown("""
     ### Instructions:
@@ -130,83 +213,6 @@ def main():
 
             # Create visualization section
             st.subheader("Abnormal Parameters")
-            
-            def is_value_abnormal(row: pd.Series) -> bool:
-                try:
-                    value = pd.to_numeric(row['value'])
-                    low = pd.to_numeric(row['low_value']) if pd.notna(row['low_value']) else None
-                    high = pd.to_numeric(row['high_value']) if pd.notna(row['high_value']) else None
-
-                    if pd.isna(value):
-                        return False
-
-
-                    # Strict comparison with explicit float conversion
-                    if low is not None and float(value) < float(low):
-                        return True
-                    if high is not None and float(value) > float(high):
-                        return True
-                    return False
-                except (ValueError, TypeError) as e:
-                    return False
-
-            def get_parameter_metadata(df: pd.DataFrame, param_name: str) -> Dict:
-                param_data = df[df['standard_lab_parameter_name'] == param_name].copy()
-                param_data['value'] = pd.to_numeric(param_data['value'], errors='coerce')
-                
-                metadata = {
-                    'category': param_data['category'].iloc[0] if not param_data.empty else 'Unknown',
-                    'unit': param_data['unit'].iloc[0] if not param_data.empty else '',
-                    'latest_value': param_data.iloc[-1]['value'] if not param_data.empty else None,
-                    'trend': None,
-                    'is_numeric': not param_data['value'].isna().all(),
-                    'measurements': len(param_data),
-                    'reference_range': f"{param_data['low_value'].iloc[0]} - {param_data['high_value'].iloc[0]}" 
-                        if not param_data.empty else 'N/A'
-                }
-                
-                if metadata['is_numeric'] and len(param_data) > 1:
-                    last_values = param_data['value'].tail(2).values
-                    metadata['trend'] = 'increasing' if last_values[1] > last_values[0] else 'decreasing'
-                
-                return metadata
-
-            def plot_parameter(df: pd.DataFrame, param_name: str) -> bool:
-                param_data = df[df['standard_lab_parameter_name'] == param_name].copy()
-                param_data['created_at'] = pd.to_datetime(param_data['created_at'])
-                param_data['value'] = pd.to_numeric(param_data['value'], errors='coerce')
-                
-                if param_data['value'].isna().all():
-                    return False
-                
-                # Create the plot
-                fig = px.line(
-                    param_data.sort_values('created_at'), 
-                    x='created_at', 
-                    y='value',
-                    title=f'{param_name} ({param_data["unit"].iloc[0]})',
-                    markers=True
-                )
-                
-                # Add reference ranges
-                if not param_data.empty:
-                    low_val = pd.to_numeric(param_data['low_value'].iloc[0], errors='coerce')
-                    high_val = pd.to_numeric(param_data['high_value'].iloc[0], errors='coerce')
-                    
-                    if pd.notna(low_val):
-                        fig.add_hline(y=low_val, line_dash="dash", 
-                                    annotation_text="Lower Limit", line_color="red")
-                    if pd.notna(high_val):
-                        fig.add_hline(y=high_val, line_dash="dash", 
-                                    annotation_text="Upper Limit", line_color="red")
-                
-                fig.update_layout(
-                    hovermode='x unified',
-                    showlegend=False,
-                    height=400
-                )
-                
-                return fig
 
             # Organize parameters by category
             parameters_by_category = defaultdict(list)
