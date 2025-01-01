@@ -1,0 +1,5 @@
+- we use uv for package management. to add a package, do `uv add packagename`
+- prefer pure functions over impure functions always, move the impure implementation always into the orchestration layer.
+- try and keep the function size below 50 lines
+- for making cli apps, use the typer library with type annotations
+- always annotate types for all variables, function arguments and return types
