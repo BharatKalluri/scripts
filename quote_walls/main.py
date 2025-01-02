@@ -1,4 +1,5 @@
 from PIL import Image, ImageDraw, ImageFont
+from screeninfo import get_monitors
 import textwrap
 import subprocess
 from pathlib import Path
@@ -112,14 +113,19 @@ def set_wallpaper(wallpaper_bytes: bytes) -> None:
 
 def main():
     # Seed random with system entropy
-    random.seed(int.from_bytes(os.urandom(8), byteorder="big") ^ int(time.time() * 1000))
+    random.seed(
+        int.from_bytes(os.urandom(8), byteorder="big") ^ int(time.time() * 1000)
+    )
+
+    # Get primary monitor resolution
+    monitor = get_monitors()[0]  # Primary monitor
     
     # Generate wallpaper for random quote
     quote = random.choice(DEFAULT_QUOTES)
     wallpaper_bytes = generate_wallpaper(
         quote=quote,
-        width=3440,
-        height=1440,
+        width=monitor.width,
+        height=monitor.height,
         background_color="#C73B13",
         text_color="#020003",
     )
