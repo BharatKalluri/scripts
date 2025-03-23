@@ -20,6 +20,7 @@ st.set_page_config(
 
 class FileSource(Enum):
     HDFC_CSV_EXPORT_FROM_WEB = "HDFC CSV Export from HDFC Netbanking web portal"
+    ICICI_CREDIT_CARD_STATEMENT = "ICICI Credit Card Statement CSV"
 
 
 @dataclass
@@ -29,6 +30,19 @@ class Transaction:
     ref_id: str
     date: date
     closing_balance: float
+
+
+def extract_payee_from_icici_credit_card_narration(narration: str) -> Optional[str]:
+    """Extract payee name from ICICI credit card transaction narration.
+    Takes the first part before comma as the payee name.
+    """
+    if not narration:
+        return None
+    
+    parts = narration.split(",")
+    if parts:
+        return parts[0].strip()
+    return None
 
 
 def extract_payee_from_hdfc_bank_statement_narration(narration: str) -> Optional[str]:
@@ -50,7 +64,63 @@ def extract_payee_from_hdfc_bank_statement_narration(narration: str) -> Optional
     return None
 
 
-def transform_hdfc_csv_to_transactions(file_contents: str) -> List[Transaction]:
+def transform_icici_credit_card_statement_csv_to_transactions(
+    file_contents: str,
+) -> List[Transaction]:
+    transactions = []
+    csvfile = io.StringIO(file_contents)
+    reader = csv.reader(csvfile)
+
+    # Skip rows until we find transaction details section
+    for row in reader:
+        if row and row[1].strip() == "Transaction Details":
+            try:
+                next(reader)  # Skip column headers
+            except StopIteration:
+                return transactions
+            break
+
+    # Process all remaining rows as transactions
+    for row in reader:
+        if not row or len(row) < 9 or not row[2]:  # Check for date column
+            continue
+
+        date_str = row[2].strip().replace(",", "")
+        date_obj = datetime.strptime(date_str, "%d%m%Y")
+
+        description = row[3].strip()
+
+        amount_str = row[6].strip()
+
+        if not amount_str:
+            continue
+
+        # Remove "Dr." or "Cr." and convert to float
+        amount_str = amount_str.replace(" Dr.", "").replace(" Cr.", "").replace(",", "")
+        amount = float(amount_str)
+
+        # Make debits negative and credits positive
+        if "Dr." in row[6]:
+            amount = -amount
+
+        ref_num = row[8].strip()
+
+        transactions.append(
+            Transaction(
+                amount=amount,
+                narration=description,
+                ref_id=ref_num,
+                date=date_obj.date(),
+                closing_balance=0.0,  # ICICI statements don't include running balance
+            )
+        )
+
+    return transactions
+
+
+def transform_hdfc_csv_to_transactions(
+    file_contents: str,
+) -> List[Transaction]:
     transactions = []
     csvfile = io.StringIO(file_contents)
 
@@ -114,13 +184,15 @@ def transform_hdfc_csv_to_transactions(file_contents: str) -> List[Transaction]:
     return transactions
 
 
-def transactions_to_df(transactions: List[Transaction]) -> pd.DataFrame:
+def transactions_to_df(
+    transactions: List[Transaction], payee_extractor: Optional[callable] = None
+) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
                 "Date": t.date,
                 "Amount": t.amount,
-                "Payee": extract_payee_from_hdfc_bank_statement_narration(t.narration),
+                "Payee": payee_extractor(t.narration) if payee_extractor else None,
                 "Description": t.narration,
                 "Reference": t.ref_id,
                 "Closing Balance": t.closing_balance,
@@ -135,7 +207,10 @@ def main():
 
     data_source = st.selectbox(
         "Data Source",
-        options=[FileSource.HDFC_CSV_EXPORT_FROM_WEB.value],
+        options=[
+            FileSource.HDFC_CSV_EXPORT_FROM_WEB.value,
+            FileSource.ICICI_CREDIT_CARD_STATEMENT.value,
+        ],
         help="Select the format of your bank statement export",
     )
 
@@ -146,16 +221,31 @@ def main():
             # Parse transactions
             file_contents = uploaded_file.getvalue().decode()
             if data_source == FileSource.HDFC_CSV_EXPORT_FROM_WEB.value:
-                transactions = transform_hdfc_csv_to_transactions(file_contents)
+                payee_extractor = extract_payee_from_hdfc_bank_statement_narration
+                transactions = transform_hdfc_csv_to_transactions(
+                    file_contents,
+                )
+            elif data_source == FileSource.ICICI_CREDIT_CARD_STATEMENT.value:
+                payee_extractor = extract_payee_from_icici_credit_card_narration
+                transactions = (
+                    transform_icici_credit_card_statement_csv_to_transactions(
+                        file_contents,
+                    )
+                )
             else:
                 raise ValueError(f"Unsupported data source: {data_source}")
 
             st.success("Parsed transactions successfully! 🎉")
             st.subheader("Parsed Transactions")
-            st.dataframe(transactions_to_df(transactions), use_container_width=True)
+            st.dataframe(
+                transactions_to_df(transactions, payee_extractor=payee_extractor),
+                use_container_width=True,
+            )
 
         except Exception as e:
             st.error(f"Error parsing file: {str(e)}")
+            print(e)
+            raise e
 
 
 if __name__ == "__main__":
