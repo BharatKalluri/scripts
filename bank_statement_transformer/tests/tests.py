@@ -1,6 +1,8 @@
 from datetime import date
 
-from main import transform_hdfc_csv_to_transactions, Transaction, extract_payee_from_hdfc_bank_statement_narration
+from transformers.hdfc_bank_statement_csv import extract_payee_from_hdfc_bank_statement_narration, \
+    transform_hdfc_csv_to_transactions
+from types import Transaction
 
 
 def test_extract_payee_from_narration():
