@@ -21,6 +21,7 @@ st.set_page_config(
 class FileSource(Enum):
     HDFC_CSV_EXPORT_FROM_WEB = "HDFC CSV Export from HDFC Netbanking web portal"
     ICICI_CREDIT_CARD_STATEMENT = "ICICI Credit Card Statement CSV"
+    HDFC_CREDIT_CARD_STATEMENT = "HDFC Credit Card Statement CSV"
 
 
 @dataclass
@@ -42,6 +43,15 @@ def extract_payee_from_icici_credit_card_narration(narration: str) -> Optional[s
     parts = narration.split(",")
     if parts:
         return parts[0].strip()
+    return None
+
+def extract_payee_from_hdfc_credit_card_narration(narration: str) -> Optional[str]:
+    """Extract payee name from ICICI credit card transaction narration.
+    Takes the first part before comma as the payee name.
+    """
+    if not narration:
+        return None
+
     return None
 
 
@@ -183,6 +193,136 @@ def transform_hdfc_csv_to_transactions(
 
     return transactions
 
+def transform_hdfc_credit_card_statement_to_transactions(
+    file_contents: bytes,
+) -> List[Transaction]:
+    """Extract transactions from HDFC credit card statement PDF.
+    
+    Args:
+        file_contents: Raw PDF file contents as bytes
+        
+    Returns:
+        List of Transaction objects
+    """
+    import tempfile
+    import camelot
+    import pandas as pd
+    
+    transactions = []
+    
+    # Create a temporary file to save the PDF content
+    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+        temp_file.write(file_contents)
+        temp_file_path = temp_file.name
+    
+    try:
+        # Try multiple table extraction methods for page 1
+        # Method 1: Lattice mode with specific settings
+        tables_lattice = camelot.read_pdf(
+            temp_file_path, 
+            pages='all',
+            flavor='lattice',
+            line_scale=40,  # Increase line detection sensitivity
+            process_background=True
+        )
+        
+        # Method 2: Stream mode with specific settings
+        tables_stream = camelot.read_pdf(
+            temp_file_path, 
+            pages='all',
+            flavor='stream',
+            edge_tol=500,  # More tolerant of imperfect table edges
+            row_tol=10     # More tolerant of row variations
+        )
+        
+        # Filter for tables containing "Domestic Transactions"
+        domestic_transaction_dfs = []
+        
+        # Process lattice tables
+        if tables_lattice and len(tables_lattice) > 0:
+            for table in tables_lattice:
+                if table.df.shape[0] > 1:
+                    # Check if "Domestic Transactions" is in the first row
+                    first_row = ' '.join(str(cell) for cell in table.df.iloc[0])
+                    if "Domestic Transactions" in first_row:
+                        # Skip the first 4 rows
+                        if table.df.shape[0] > 4:
+                            domestic_transaction_dfs.append(table.df.iloc[4:].reset_index(drop=True))
+        
+        # Process stream tables
+        if tables_stream and len(tables_stream) > 0:
+            for table in tables_stream:
+                if table.df.shape[0] > 1:
+                    # Check if "Domestic Transactions" is in the first row
+                    first_row = ' '.join(str(cell) for cell in table.df.iloc[0])
+                    if "Domestic Transactions" in first_row:
+                        # Skip the first 4 rows
+                        if table.df.shape[0] > 4:
+                            domestic_transaction_dfs.append(table.df.iloc[4:].reset_index(drop=True))
+
+        # Combine all domestic transaction dataframes
+        if domestic_transaction_dfs:
+            combined_df = pd.concat(domestic_transaction_dfs, ignore_index=True)
+            # Remove duplicate rows that might be present in multiple tables
+            combined_df = combined_df.drop_duplicates()
+        else:
+            logging.warning("No 'Domestic Transactions' tables found in the PDF")
+            return transactions
+        
+        # Skip header row if present
+        if len(combined_df) > 1:
+            # Assuming standard HDFC credit card statement format
+            # Process each row in the table
+            for _, row in combined_df.iterrows():
+                # Extract date, description, reward points, and amount
+                if len(row) >= 4:  # Ensure we have all four columns
+                    date_str = row[0].strip()
+                    description = row[1].strip()
+                    # Skip reward points (index 2)
+                    amount_str = row[3].strip().replace(',', '')
+
+                    # Parse date
+                    date_part = date_str.split(' ')[0]
+                    date_obj = datetime.strptime(date_part, "%d/%m/%Y")
+
+                    # Parse amount (check for 'Cr' suffix)
+                    is_credit = 'Cr' in amount_str
+                    clean_amount = amount_str.replace('Cr', '').strip()
+                    amount = float(clean_amount)
+
+                    # For credit card statements:
+                    # - If marked with 'Cr', it's a credit (positive)
+                    # - Otherwise, it's a debit (negative)
+                    if not is_credit:
+                        amount = -amount
+
+                    # Generate reference ID from transaction details
+                    hash_input = f"{date_obj.date().isoformat()}:{amount}:{description}"
+                    ref_id = hashlib.sha256(hash_input.encode()).hexdigest()
+
+                    transactions.append(
+                        Transaction(
+                            amount=amount,
+                            narration=description,
+                            ref_id=ref_id,
+                            date=date_obj.date(),
+                            closing_balance=0.0,  # Credit card statements typically don't include running balance
+                        )
+                    )
+    
+    except Exception as e:
+        logging.error(f"Error extracting tables from PDF: {e}")
+    
+    finally:
+        # Clean up the temporary file
+        import os
+        try:
+            os.unlink(temp_file_path)
+        except:
+            pass
+            
+    return transactions
+
 
 def transactions_to_df(
     transactions: List[Transaction], payee_extractor: Optional[callable] = None
@@ -210,6 +350,7 @@ def main():
         options=[
             FileSource.HDFC_CSV_EXPORT_FROM_WEB.value,
             FileSource.ICICI_CREDIT_CARD_STATEMENT.value,
+            FileSource.HDFC_CREDIT_CARD_STATEMENT.value,
         ],
         help="Select the format of your bank statement export",
     )
@@ -232,6 +373,11 @@ def main():
                         file_contents,
                     )
                 )
+            elif data_source == FileSource.HDFC_CREDIT_CARD_STATEMENT.value:
+                payee_extractor = extract_payee_from_hdfc_bank_statement_narration
+                transactions = transform_hdfc_credit_card_statement_to_transactions(
+                    file_contents,
+                )
             else:
                 raise ValueError(f"Unsupported data source: {data_source}")
 
@@ -249,4 +395,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    file_contents = open("/Users/bharatkalluri/Downloads/0001019510000506498_03232025_04122025.PDF", "rb").read()
+    hdfc_transactions = transform_hdfc_credit_card_statement_to_transactions(file_contents)
+    print(hdfc_transactions)
