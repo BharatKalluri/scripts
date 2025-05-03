@@ -23,7 +23,7 @@ st.set_page_config(
 class FileSource(Enum):
     HDFC_CSV_EXPORT_FROM_WEB = "HDFC CSV Export from HDFC Netbanking web portal"
     ICICI_CREDIT_CARD_STATEMENT = "ICICI Credit Card Statement CSV"
-    HDFC_CREDIT_CARD_STATEMENT = "HDFC Credit Card Statement CSV"
+    HDFC_CREDIT_CARD_STATEMENT_PDF = "HDFC Credit Card Statement PDF"
 
 
 @dataclass
@@ -207,30 +207,28 @@ def transform_hdfc_credit_card_statement_to_transactions(
     with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
         temp_file.write(file_contents)
         temp_file_path = temp_file.name
-    
-    try:
         # Try multiple table extraction methods for page 1
         # Method 1: Lattice mode with specific settings
         tables_lattice = camelot.read_pdf(
-            temp_file_path, 
+            temp_file_path,
             pages='all',
             flavor='lattice',
             line_scale=40,  # Increase line detection sensitivity
             process_background=True
         )
-        
+
         # Method 2: Stream mode with specific settings
         tables_stream = camelot.read_pdf(
-            temp_file_path, 
+            temp_file_path,
             pages='all',
             flavor='stream',
             edge_tol=500,  # More tolerant of imperfect table edges
             row_tol=10     # More tolerant of row variations
         )
-        
+
         # Filter for tables containing "Domestic Transactions"
         domestic_transaction_dfs = []
-        
+
         # Process lattice tables
         if tables_lattice and len(tables_lattice) > 0:
             for table in tables_lattice:
@@ -241,7 +239,7 @@ def transform_hdfc_credit_card_statement_to_transactions(
                         # Skip the first 4 rows
                         if table.df.shape[0] > 4:
                             domestic_transaction_dfs.append(table.df.iloc[4:].reset_index(drop=True))
-        
+
         # Process stream tables
         if tables_stream and len(tables_stream) > 0:
             for table in tables_stream:
@@ -261,7 +259,7 @@ def transform_hdfc_credit_card_statement_to_transactions(
         else:
             logging.warning("No 'Domestic Transactions' tables found in the PDF")
             return transactions
-        
+
         # Skip header row if present
         if len(combined_df) > 1:
             # Assuming standard HDFC credit card statement format
@@ -302,17 +300,6 @@ def transform_hdfc_credit_card_statement_to_transactions(
                             closing_balance=0.0,  # Credit card statements typically don't include running balance
                         )
                     )
-    
-    except Exception as e:
-        logging.error(f"Error extracting tables from PDF: {e}")
-    
-    finally:
-        # Clean up the temporary file
-        import os
-        try:
-            os.unlink(temp_file_path)
-        except:
-            pass
             
     return transactions
 
@@ -343,33 +330,36 @@ def main():
         options=[
             FileSource.HDFC_CSV_EXPORT_FROM_WEB.value,
             FileSource.ICICI_CREDIT_CARD_STATEMENT.value,
-            FileSource.HDFC_CREDIT_CARD_STATEMENT.value,
+            FileSource.HDFC_CREDIT_CARD_STATEMENT_PDF.value,
         ],
         help="Select the format of your bank statement export",
     )
 
-    uploaded_file = st.file_uploader("Choose bank statement file", type="csv")
+    uploaded_file = st.file_uploader("Choose bank statement file", type=["csv", "pdf"])
 
     if uploaded_file is not None:
         try:
             # Parse transactions
-            file_contents = uploaded_file.getvalue().decode()
             if data_source == FileSource.HDFC_CSV_EXPORT_FROM_WEB.value:
                 payee_extractor = extract_payee_from_hdfc_bank_statement_narration
+                file_contents = uploaded_file.getvalue().decode()
                 transactions = transform_hdfc_csv_to_transactions(
                     file_contents,
                 )
             elif data_source == FileSource.ICICI_CREDIT_CARD_STATEMENT.value:
                 payee_extractor = extract_payee_from_icici_credit_card_narration
+                file_contents = uploaded_file.getvalue().decode()
                 transactions = (
                     transform_icici_credit_card_statement_csv_to_transactions(
                         file_contents,
                     )
                 )
-            elif data_source == FileSource.HDFC_CREDIT_CARD_STATEMENT.value:
+            elif data_source == FileSource.HDFC_CREDIT_CARD_STATEMENT_PDF.value:
                 payee_extractor = extract_payee_from_hdfc_credit_card_narration
+                # For PDF files, use bytes directly without decoding
+                file_contents_bytes = uploaded_file.getvalue()
                 transactions = transform_hdfc_credit_card_statement_to_transactions(
-                    file_contents,
+                    file_contents_bytes,
                 )
             else:
                 raise ValueError(f"Unsupported data source: {data_source}")
@@ -388,6 +378,4 @@ def main():
 
 
 if __name__ == "__main__":
-    file_contents = open("/Users/bharatkalluri/Downloads/0001019510000506498_03232025_04122025.PDF", "rb").read()
-    hdfc_transactions = transform_hdfc_credit_card_statement_to_transactions(file_contents)
-    print(hdfc_transactions)
+    main()
