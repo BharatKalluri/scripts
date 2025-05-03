@@ -9,6 +9,8 @@ from typing import List, Optional
 
 import streamlit as st
 import pandas as pd
+import tempfile
+import camelot
 
 # Configure Streamlit page
 st.set_page_config(
@@ -46,12 +48,6 @@ def extract_payee_from_icici_credit_card_narration(narration: str) -> Optional[s
     return None
 
 def extract_payee_from_hdfc_credit_card_narration(narration: str) -> Optional[str]:
-    """Extract payee name from ICICI credit card transaction narration.
-    Takes the first part before comma as the payee name.
-    """
-    if not narration:
-        return None
-
     return None
 
 
@@ -204,9 +200,6 @@ def transform_hdfc_credit_card_statement_to_transactions(
     Returns:
         List of Transaction objects
     """
-    import tempfile
-    import camelot
-    import pandas as pd
     
     transactions = []
     
@@ -374,7 +367,7 @@ def main():
                     )
                 )
             elif data_source == FileSource.HDFC_CREDIT_CARD_STATEMENT.value:
-                payee_extractor = extract_payee_from_hdfc_bank_statement_narration
+                payee_extractor = extract_payee_from_hdfc_credit_card_narration
                 transactions = transform_hdfc_credit_card_statement_to_transactions(
                     file_contents,
                 )
