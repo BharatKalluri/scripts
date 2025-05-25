@@ -266,11 +266,11 @@ def transform_hdfc_credit_card_statement_to_transactions(
             # Process each row in the table
             for _, row in combined_df.iterrows():
                 # Extract date, description, reward points, and amount
-                if len(row) >= 4:  # Ensure we have all four columns
+                if len(row) >= 3:  # Ensure we have all four columns
                     date_str = row[0].strip()
                     description = row[1].strip()
-                    # Skip reward points (index 2)
-                    amount_str = row[3].strip().replace(',', '')
+                    # Skip reward points (index 2) if reward points column is present, else use col 2
+                    amount_str = row[3].strip().replace(',', '') if len(row)>3 else row[2].strip().replace(',', '')
 
                     # Parse date
                     date_part = date_str.split(' ')[0]
