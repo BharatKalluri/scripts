@@ -249,7 +249,21 @@ def transform_hdfc_credit_card_statement_to_transactions(
                     if "Domestic Transactions" in first_row:
                         # Skip the first 4 rows
                         if table.df.shape[0] > 4:
-                            domestic_transaction_dfs.append(table.df.iloc[4:].reset_index(drop=True))
+                            df = table.df.iloc[4:].reset_index(drop=True)
+                            # Remove rows from 'Reward Points Summary' onwards
+                            reward_idx = None
+                            for idx, row in df.iterrows():
+                                if any("Reward Points Summary" in str(cell) for cell in row):
+                                    reward_idx = idx
+                                    break
+                            if reward_idx is not None:
+                                df = df.iloc[:reward_idx]
+                            # Drop all columns where all values are empty string or NaN
+                            df = df.replace('', pd.NA).dropna(axis=1, how='all')
+                            # Sort columns in ascending order and reset to consecutive integers
+                            df = df.reindex(sorted(df.columns), axis=1)
+                            df.columns = range(df.shape[1])
+                            domestic_transaction_dfs.append(df)
 
         # Combine all domestic transaction dataframes
         if domestic_transaction_dfs:
